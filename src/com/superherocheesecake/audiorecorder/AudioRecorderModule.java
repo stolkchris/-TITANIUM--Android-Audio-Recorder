@@ -12,6 +12,7 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.HashMap;
 
 import org.appcelerator.kroll.KrollDict;
@@ -30,12 +31,12 @@ import android.os.Environment;
 @Kroll.module(name="AudioRecorder", id="com.superherocheesecake.audiorecorder")
 public class AudioRecorderModule extends KrollModule
 {
+    @Kroll.constant public static final String Storage_INTERNAL = "internal";
+    @Kroll.constant public static final String Storage_EXTERNAL = "external";
 
-    private AudioRecord recorder     = null;
-    private String      filename     = null;
-    private String      filepath     = null;
-    private String      fullFilePath = null;
-    private Boolean     isRecording  = false;
+    private String      outputFile  = null;
+    private Boolean     isRecording = false;
+    private AudioRecord recorder    = null;
 
     private KrollFunction successCallback = null;
     private KrollFunction errorCallback   = null;
@@ -57,7 +58,6 @@ public class AudioRecorderModule extends KrollModule
     public static void onAppCreate(TiApplication app)
     {
         Log.d(TAG, "inside onAppCreate");
-        // put module init code that needs to run when the application is created
     }
 
 
@@ -82,11 +82,8 @@ public class AudioRecorderModule extends KrollModule
      */
     private void sendSuccessEvent(String filepath) {
         if (successCallback != null) {
-            //System.out.println("@@## inside: successCallback");
-            //System.out.println("@@## filepath: " + filepath);
             HashMap<String, String> event = new HashMap<String, String>();
-            event.put("filePath", filepath);
-            event.put("fileName", fullFilePath);
+            event.put("outputFile", outputFile);
 
             // Fire an event directly to the specified listener (callback)
             successCallback.call(getKrollObject(), event);
@@ -133,43 +130,45 @@ public class AudioRecorderModule extends KrollModule
         }
     }
 
-    private String getFilename(String selectedFileName, String selectedDirName, String location) {
-        String directoryName = AUDIO_RECORDER_FOLDER;
-        if (selectedDirName != null && selectedDirName.length() > 0) {
-            directoryName = selectedDirName;
+    /**
+     * Returns the full file path
+     * @param  filename The name of the file
+     * @param  dirname  The directory of the file
+     * @param  location The location (internal or external)
+     * @return String Returns the output file name
+     * @throws Exception If invalid storage type is supplied
+     */
+    private String getOutputFilename(String filename, String dirname, String location) throws Exception {
+        dirname  = (dirname != null && dirname.length() > 0) ? dirname : AUDIO_RECORDER_FOLDER;
+        filename = System.currentTimeMillis() + (String)filename + ".wav";
+
+        if (!checkStorageType(location)) {
+            throw new Exception("Invalid storage type supplied");
         }
 
-        String fileName = System.currentTimeMillis() + "";
-        if (selectedFileName != null && selectedFileName.length() > 0) {
-            fileName = selectedFileName + ".wav";
-        }
-
-        filename = fileName;
-
-        System.out.println("@@## cheking external storage: " + isExternalStorageWritable());
-        if(location.equals("internal")){
-            File audioDirectory = TiApplication.getAppRootOrCurrentActivity().getDir(directoryName, Context.MODE_WORLD_READABLE);
+        if(location.equals(Storage_INTERNAL)){
+            File audioDirectory = TiApplication.getAppRootOrCurrentActivity().getDir(dirname, Context.MODE_WORLD_READABLE);
             //System.out.println("@@## audioDirectory.exists(): " + audioDirectory.exists());
             if (!audioDirectory.exists()) {
                 audioDirectory.mkdirs();
             }
-            fullFilePath = (audioDirectory.getAbsolutePath() + "/" + filename);
+            outputFile = (audioDirectory.getAbsolutePath() + "/" + filename);
             //System.out.println("@@## internal fullFileName: " + fullFileName);
-            return fullFilePath;
+            return outputFile;
         } else {
             if(isExternalStorageWritable()){
                 String packageName = TiApplication.getAppRootOrCurrentActivity().getPackageName();
                 //System.out.println("@@## packageName: " + packageName);
                 String sdCardPath = Environment.getExternalStorageDirectory().getPath();
-                File audioDirectory = new File(sdCardPath, packageName+"/"+directoryName);
+                File audioDirectory = new File(sdCardPath, packageName+"/"+dirname);
 
                 if (!audioDirectory.exists()) {
                     audioDirectory.mkdirs();
                 }
 
-                fullFilePath = (audioDirectory.getAbsolutePath() + "/" + filename);
+                outputFile = (audioDirectory.getAbsolutePath() + "/" + filename);
                 //System.out.println("@@## external fullFileName: " + fullFileName);
-                return fullFilePath;
+                return outputFile;
             } else {
                 return null;
             }
@@ -177,22 +176,22 @@ public class AudioRecorderModule extends KrollModule
     }
 
     @Kroll.method
-    public void startRecording(HashMap args) {
+    public void startRecording(HashMap args) throws Exception {
         if(isRecording){
             sendErrorEvent("Another audio record is inprogress");
         } else {
             recorder          = null;
             KrollDict options = new KrollDict(args);
             
-            String fileName      = (String) options.get("fileName");
+            String filename      = (String) options.get("filename");
             String fileDirectory = (String) options.get("directoryName");
-            String fileLocation  = (options.containsKey("fileLocation")) ? (String) options.get("fileLocation") : "external";
+            String fileLocation  = (options.containsKey("fileLocation")) ? (String) options.get("fileLocation") : Storage_EXTERNAL;
 
             registerCallbacks(args);
 
-            final String outputFileName = getFilename(fileName, fileDirectory, "external");
+            final String outputFile = getOutputFilename(filename, fileDirectory, fileLocation);
             //System.out.println("@@## outputFileName = "+outputFileName);
-            if(outputFileName == null || outputFileName == ""){
+            if(outputFile == null || outputFile == ""){
                 sendErrorEvent("External storage not available");
                 return;
             }
@@ -218,7 +217,7 @@ public class AudioRecorderModule extends KrollModule
                         FileOutputStream os = null;
 
                         try {
-                            os = new FileOutputStream(outputFileName);
+                            os = new FileOutputStream(outputFile);
                         } catch (FileNotFoundException e) {
                             e.printStackTrace();
                         }
@@ -261,7 +260,7 @@ public class AudioRecorderModule extends KrollModule
 
                 recorder    = null;
                 isRecording = false;
-                sendSuccessEvent(fullFilePath);
+                sendSuccessEvent(outputFile);
             } catch (IllegalStateException e) {
                 //System.out.println("@@## Error2 IllegalStateException e = "+e);
                 e.printStackTrace();
@@ -270,9 +269,25 @@ public class AudioRecorderModule extends KrollModule
         }
     }
 
+    /**
+     * Check if the recorder is recording
+     * @return Boolean
+     */
     @Kroll.method
     public Boolean isRecording() {
         return isRecording;
+    }
+
+    /**
+     * Checks if storage type is supported
+     * @param type The supplied type
+     * @return Boolean
+     */
+    @Kroll.method
+    private Boolean checkStorageType(String type)
+    {
+        String[] types = {Storage_INTERNAL, Storage_EXTERNAL};
+        return Arrays.asList(types).contains(type);
     }
 
 }
