@@ -238,6 +238,7 @@ public class AudioRecorderModule extends KrollModule
                         }
                     }
                 });
+
                 recordingThread.start();
                 recorder.startRecording();
             } catch (Exception e) {
@@ -262,7 +263,19 @@ public class AudioRecorderModule extends KrollModule
                 isRecording = false;
                 sendSuccessEvent(outputFile);
             } catch (IllegalStateException e) {
-                //System.out.println("@@## Error2 IllegalStateException e = "+e);
+                try {
+                    File audioFile = new File(outputFile);
+
+                    if (audioFile.exists()) {
+                        if (!audioFile.delete()) {
+                            throw new Exception("Unable to remove file:" + outputFile);
+                        }
+                    }
+                } catch (Exception subE) {
+                    subE.printStackTrace();
+                    sendErrorEvent(subE.toString());
+                }
+
                 e.printStackTrace();
                 sendErrorEvent(e.toString());
             }
@@ -275,7 +288,7 @@ public class AudioRecorderModule extends KrollModule
      */
     @Kroll.method
     public Boolean isRecording() {
-        return isRecording;
+        return (recorder instanceof AudioRecord && recorder.getState() == AudioRecord.RECORDSTATE_RECORDING);
     }
 
     /**
