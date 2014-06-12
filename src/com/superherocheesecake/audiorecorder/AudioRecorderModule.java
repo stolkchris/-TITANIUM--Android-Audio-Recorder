@@ -8,55 +8,300 @@
  */
 package com.superherocheesecake.audiorecorder;
 
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.util.Arrays;
+import java.util.HashMap;
+
+import org.appcelerator.kroll.KrollDict;
+import org.appcelerator.kroll.KrollFunction;
 import org.appcelerator.kroll.KrollModule;
 import org.appcelerator.kroll.annotations.Kroll;
-
 import org.appcelerator.titanium.TiApplication;
 import org.appcelerator.kroll.common.Log;
+
+import android.content.Context;
+import android.media.MediaRecorder;
+import android.media.AudioRecord;
+import android.media.AudioFormat;
+import android.os.Environment;
 
 @Kroll.module(name="AudioRecorder", id="com.superherocheesecake.audiorecorder")
 public class AudioRecorderModule extends KrollModule
 {
+    @Kroll.constant public static final String Storage_INTERNAL = "internal";
+    @Kroll.constant public static final String Storage_EXTERNAL = "external";
 
-	// Standard Debugging variables
-	private static final String TAG = "AudioRecorderModule";
+    private String      outputFile  = null;
+    private Boolean     isRecording = false;
+    private AudioRecord recorder    = null;
 
-	// You can define constants with @Kroll.constant, for example:
-	// @Kroll.constant public static final String EXTERNAL_NAME = value;
-	
-	public AudioRecorderModule()
-	{
-		super();
-	}
+    private KrollFunction successCallback = null;
+    private KrollFunction errorCallback   = null;
 
-	@Kroll.onAppCreate
-	public static void onAppCreate(TiApplication app)
-	{
-		Log.d(TAG, "inside onAppCreate");
-		// put module init code that needs to run when the application is created
-	}
+    private String AUDIO_RECORDER_FOLDER = "audio_recorder";
 
-	// Methods
-	@Kroll.method
-	public String example()
-	{
-		Log.d(TAG, "example called");
-		return "hello world";
-	}
-	
-	// Properties
-	@Kroll.getProperty
-	public String getExampleProp()
-	{
-		Log.d(TAG, "get example property");
-		return "hello world";
-	}
-	
-	
-	@Kroll.setProperty
-	public void setExampleProp(String value) {
-		Log.d(TAG, "set example property: " + value);
-	}
+    // Standard Debugging variables
+    private static final String TAG = "AudioRecorderModule";
+
+    // You can define constants with @Kroll.constant, for example:
+    // @Kroll.constant public static final String EXTERNAL_NAME = value;
+    
+    public AudioRecorderModule()
+    {
+        super();
+    }
+
+    @Kroll.onAppCreate
+    public static void onAppCreate(TiApplication app)
+    {
+        Log.d(TAG, "inside onAppCreate");
+    }
+
+
+    // Methods
+    @SuppressWarnings("deprecation")
+    private KrollFunction getCallback(final KrollDict options, final String name) {
+        return (KrollFunction) options.get(name);
+    }
+
+    /* Checks if external storage is available for read and write */
+    public boolean isExternalStorageWritable() {
+        String state = Environment.getExternalStorageState();
+        if (Environment.MEDIA_MOUNTED.equals(state)) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Sends success event and calls the success callback
+     * @param filepath [description]
+     */
+    private void sendSuccessEvent(String filepath) {
+        if (successCallback != null) {
+            HashMap<String, String> event = new HashMap<String, String>();
+            event.put("outputFile", outputFile);
+
+            // Fire an event directly to the specified listener (callback)
+            successCallback.call(getKrollObject(), event);
+        }
+    }
+
+    /**
+     * Sends an error event and calls the error callback
+     * @param message Error message
+     */
+    private void sendErrorEvent(String message) {
+        //System.out.println("@@## inside: sendErrorEvent");
+        //System.out.println("@@## message: " + message);
+        if (errorCallback != null) {
+            HashMap<String, String> event = new HashMap<String, String>();
+            event.put("message", message);
+
+            // Fire an event directly to the specified listener (callback)
+            errorCallback.call(getKrollObject(), event);
+        }
+    }
+
+    /**
+     * Registers callbacks
+     * @param args Arguments for callbacks
+     */
+    @Kroll.method
+    public void registerCallbacks(HashMap args) {
+        Object callback;
+
+        // Save the callback functions, verifying that they are of the correct type
+        if (args.containsKey("success")) {
+            callback = args.get("success");
+            if (callback instanceof KrollFunction) {
+                successCallback = (KrollFunction) callback;
+            }
+        }
+
+        if (args.containsKey("error")) {
+            callback = args.get("error");
+            if (callback instanceof KrollFunction) {
+                errorCallback = (KrollFunction) callback;
+            }
+        }
+    }
+
+    /**
+     * Returns the full file path
+     * @param  filename The name of the file
+     * @param  dirname  The directory of the file
+     * @param  location The location (internal or external)
+     * @return String Returns the output file name
+     * @throws Exception If invalid storage type is supplied
+     */
+    private String getOutputFilename(String filename, String dirname, String location) throws Exception {
+        dirname  = (dirname != null && dirname.length() > 0) ? dirname : AUDIO_RECORDER_FOLDER;
+        filename = System.currentTimeMillis() + (String)filename + ".wav";
+
+        if (!checkStorageType(location)) {
+            throw new Exception("Invalid storage type supplied");
+        }
+
+        if(location.equals(Storage_INTERNAL)){
+            File audioDirectory = TiApplication.getAppRootOrCurrentActivity().getDir(dirname, Context.MODE_WORLD_READABLE);
+            //System.out.println("@@## audioDirectory.exists(): " + audioDirectory.exists());
+            if (!audioDirectory.exists()) {
+                audioDirectory.mkdirs();
+            }
+            outputFile = (audioDirectory.getAbsolutePath() + "/" + filename);
+            //System.out.println("@@## internal fullFileName: " + fullFileName);
+            return outputFile;
+        } else {
+            if(isExternalStorageWritable()){
+                String packageName = TiApplication.getAppRootOrCurrentActivity().getPackageName();
+                //System.out.println("@@## packageName: " + packageName);
+                String sdCardPath = Environment.getExternalStorageDirectory().getPath();
+                File audioDirectory = new File(sdCardPath, packageName+"/"+dirname);
+
+                if (!audioDirectory.exists()) {
+                    audioDirectory.mkdirs();
+                }
+
+                outputFile = (audioDirectory.getAbsolutePath() + "/" + filename);
+                //System.out.println("@@## external fullFileName: " + fullFileName);
+                return outputFile;
+            } else {
+                return null;
+            }
+        }
+    }
+
+    @Kroll.method
+    public void startRecording(HashMap args) throws Exception {
+        if(isRecording){
+            sendErrorEvent("Another audio record is inprogress");
+        } else {
+            recorder          = null;
+            KrollDict options = new KrollDict(args);
+            
+            String filename      = (String) options.get("filename");
+            String fileDirectory = (String) options.get("directoryName");
+            String fileLocation  = (options.containsKey("fileLocation")) ? (String) options.get("fileLocation") : Storage_EXTERNAL;
+
+            registerCallbacks(args);
+
+            final String outputFile = getOutputFilename(filename, fileDirectory, fileLocation);
+            //System.out.println("@@## outputFileName = "+outputFileName);
+            if(outputFile == null || outputFile == ""){
+                sendErrorEvent("External storage not available");
+                return;
+            }
+
+            int audioFormat             = AudioFormat.ENCODING_PCM_16BIT;
+            int sampleRate              = 44100;
+            int channelConfig           = AudioFormat.CHANNEL_IN_MONO;
+            final int bufferSizeInBytes = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat);
+            final byte Data[]           = new byte[bufferSizeInBytes];
+            
+            recorder = new AudioRecord(
+                MediaRecorder.AudioSource.MIC, 
+                sampleRate,
+                channelConfig,
+                audioFormat,
+                bufferSizeInBytes
+            );
+
+            try {
+                Thread recordingThread = new Thread(new Runnable() {
+                    public void run() {
+                        // Create file output stream variable
+                        FileOutputStream os = null;
+
+                        try {
+                            os = new FileOutputStream(outputFile);
+                        } catch (FileNotFoundException e) {
+                            e.printStackTrace();
+                        }
+                        while(isRecording) {
+                            recorder.read(Data, 0, Data.length);
+                            try {
+                                os.write(Data, 0, bufferSizeInBytes);
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                                sendErrorEvent(e.toString());
+                            }
+                            try {
+                                os.close();
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                                sendErrorEvent(e.toString());
+                            }
+                        }
+                    }
+                });
+
+                recordingThread.start();
+                recorder.startRecording();
+            } catch (Exception e) {
+                isRecording = false;
+                recorder.stop();
+
+                e.printStackTrace();
+                sendErrorEvent(e.toString());
+            }
+        }
+    }
+
+    @Kroll.method
+    public void stopRecording() {
+        //System.out.println("@@## called: stopRecording");
+        if (null != recorder) {
+            try {
+                recorder.stop();
+                recorder.release();
+
+                recorder    = null;
+                isRecording = false;
+                sendSuccessEvent(outputFile);
+            } catch (IllegalStateException e) {
+                try {
+                    File audioFile = new File(outputFile);
+
+                    if (audioFile.exists()) {
+                        if (!audioFile.delete()) {
+                            throw new Exception("Unable to remove file:" + outputFile);
+                        }
+                    }
+                } catch (Exception subE) {
+                    subE.printStackTrace();
+                    sendErrorEvent(subE.toString());
+                }
+
+                e.printStackTrace();
+                sendErrorEvent(e.toString());
+            }
+        }
+    }
+
+    /**
+     * Check if the recorder is recording
+     * @return Boolean
+     */
+    @Kroll.method
+    public Boolean isRecording() {
+        return (recorder instanceof AudioRecord && recorder.getState() == AudioRecord.RECORDSTATE_RECORDING);
+    }
+
+    /**
+     * Checks if storage type is supported
+     * @param type The supplied type
+     * @return Boolean
+     */
+    @Kroll.method
+    private Boolean checkStorageType(String type)
+    {
+        String[] types = {Storage_INTERNAL, Storage_EXTERNAL};
+        return Arrays.asList(types).contains(type);
+    }
 
 }
 
