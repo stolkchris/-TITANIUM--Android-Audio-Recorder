@@ -1,0 +1,18 @@
+#
+# this is your module manifest and used by Titanium
+# during compilation, packaging, distribution, etc.
+#
+version: 0.1.0
+apiversion: 2
+description: My module
+author: Chris Stolk
+license: Specify your license
+copyright: Superherocheesecake 2014
+
+
+# these should not be edited
+name: audio_recorder
+moduleid: com.superherocheesecake.audiorecorder
+guid: 9556da47-2356-4006-8fad-8ae895b4e011
+platform: android
+minsdk: 3.2.2.GA
