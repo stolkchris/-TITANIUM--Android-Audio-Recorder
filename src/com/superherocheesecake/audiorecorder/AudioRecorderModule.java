@@ -34,6 +34,8 @@ public class AudioRecorderModule extends KrollModule
     @Kroll.constant public static final String Storage_INTERNAL = "internal";
     @Kroll.constant public static final String Storage_EXTERNAL = "external";
 
+    private Thread recordingThread = null;
+    
     private String      outputFile  = null;
     private Boolean     isRecording = false;
     private AudioRecord recorder    = null;
@@ -95,8 +97,18 @@ public class AudioRecorderModule extends KrollModule
      * @param message Error message
      */
     private void sendErrorEvent(String message) {
-        //System.out.println("@@## inside: sendErrorEvent");
-        //System.out.println("@@## message: " + message);
+    	if (recorder instanceof AudioRecord) {
+    		recorder.release();
+    		
+    		if (recorder.getState() != AudioRecord.STATE_UNINITIALIZED) {
+    			recorder.stop();
+    		}
+    		
+    		// Reset the recorder
+    		recorder = null;
+    	}
+    	
+    	this.deleteRecordedFile();
         if (errorCallback != null) {
             HashMap<String, String> event = new HashMap<String, String>();
             event.put("message", message);
@@ -210,16 +222,9 @@ public class AudioRecorderModule extends KrollModule
                 audioFormat,
                 bufferSizeInBytes
             );
-            
-            if (recorder.getState() == AudioRecord.STATE_INITIALIZED) {
-            	sendErrorEvent("init");
-            } else {
-            	sendErrorEvent("Uninit");
-            }
-        }
 
-            /*try {
-                Thread recordingThread = new Thread(new Runnable() {
+            try {
+                recordingThread = new Thread(new Runnable() {
                     public void run() {
                         // Create file output stream variable
                         FileOutputStream os = null;
@@ -250,14 +255,10 @@ public class AudioRecorderModule extends KrollModule
                 recordingThread.start();
                 recorder.startRecording();
             } catch (Exception e) {
-            	if (isRecording()) {
-            		recorder.stop();
-            	}
-
                 e.printStackTrace();
                 sendErrorEvent(e.toString());
             }
-        }*/
+        }
     }
 
     @Kroll.method
@@ -268,18 +269,11 @@ public class AudioRecorderModule extends KrollModule
                 recorder.stop();
                 recorder.release();
 
-                recorder    = null;
-                isRecording = false;
+                recorder = null;
                 sendSuccessEvent(outputFile);
             } catch (IllegalStateException e) {
                 try {
-                    File audioFile = new File(outputFile);
-
-                    if (audioFile.exists()) {
-                        if (!audioFile.delete()) {
-                            throw new Exception("Unable to remove file:" + outputFile);
-                        }
-                    }
+                    
                 } catch (Exception subE) {
                     subE.printStackTrace();
                     sendErrorEvent(subE.toString());
@@ -311,6 +305,24 @@ public class AudioRecorderModule extends KrollModule
         String[] types = {Storage_INTERNAL, Storage_EXTERNAL};
         return Arrays.asList(types).contains(type);
     }
+    
+    /**
+     * Attempts to delete the recorded file
+     * @return
+     */
+    @Kroll.method
+    private Boolean deleteRecordedFile() {
+    	File file = new File(outputFile);
+    	if (file.exists()) {
+    		try {
+    			return file.delete();
+    		} catch(Exception e) {
+    			e.printStackTrace();
+    		}
+    	}
+    	return false;
+    }
+    
 
 }
 
