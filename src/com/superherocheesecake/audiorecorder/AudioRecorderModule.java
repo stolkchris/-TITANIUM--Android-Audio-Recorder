@@ -233,7 +233,7 @@ public class AudioRecorderModule extends KrollModule
                             e.printStackTrace();
                         }
 
-                        while(isRecording) {
+                        while(isRecording()) {
                             recorder.read(buffer, 0, buffer.length);
                             try {
                                 os.write(buffer, 0, bufferSizeInBytes);
