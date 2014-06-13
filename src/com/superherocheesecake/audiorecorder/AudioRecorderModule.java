@@ -9,6 +9,7 @@
 package com.superherocheesecake.audiorecorder;
 
 import java.io.*;
+import java.io.RandomAccessFile;
 import java.util.Arrays;
 import java.util.HashMap;
 
@@ -228,6 +229,9 @@ public class AudioRecorderModule extends KrollModule
 
                 recorder   = null;
                 fileStream = null;
+
+                makeWaveFile();
+
                 sendSuccessEvent(outputFile);
             } catch (IllegalStateException e) {
                 try {
@@ -313,6 +317,51 @@ public class AudioRecorderModule extends KrollModule
                     fileStream.writeShort(buffer[i]);
                 }
             }
+        } catch(Exception e) {
+            e.printStackTrace();
+            sendErrorEvent(e.toString());
+        }
+    }
+
+    @Kroll.method
+    private void makeWaveFile()
+    {
+        File inputFile = new File(outputFile);
+
+        try {
+            RandomAccessFile waveFile  = new RandomAccessFile(outputFile.replace(".pcm",".wav"), "rw");
+            FileInputStream inputStream = new FileInputStream(inputFile);
+
+            waveFile.setLength(0);
+            waveFile.writeBytes("RIFF");
+            waveFile.writeInt(36 + inputStream.available());
+            waveFile.writeBytes("WAVE");
+            waveFile.writeBytes("fmt ");
+            waveFile.writeInt(Integer.reverseBytes(16));               // Sub-chunk size, 16 for PCM
+            waveFile.writeShort(Short.reverseBytes((short) 1));        // AudioFormat, 1 for PCM
+            waveFile.writeShort(Short.reverseBytes((short) 1));        // Number of channels, 1 for mono, 2 for stereo
+            waveFile.writeInt(Integer.reverseBytes(44100));            // Sample rate
+            waveFile.writeInt(Integer.reverseBytes(44100*1*16/8));     // Byte rate, SampleRate*NumberOfChannels*mBitsPersample/8
+            waveFile.writeShort(Short.reverseBytes((short) (1*16/8))); // Block align, NumberOfChannels*mBitsPersample/8
+            waveFile.writeShort(Short.reverseBytes((short) 16));       // Bits per sample
+            waveFile.writeBytes("data");
+            waveFile.writeInt(inputStream.available());                // Data chunk size not known yet, write 0
+
+            boolean readable = false;
+            int byteValue = 0;
+            while (readable = true) {
+                byteValue = inputStream.read();
+
+                if (byteValue == -1) {
+                    readable = false;
+                    break;
+                }
+
+                waveFile.writeByte(inputStream.read());
+            }
+
+            waveFile.close();
+            inputFile.delete();
         } catch(Exception e) {
             e.printStackTrace();
             sendErrorEvent(e.toString());
