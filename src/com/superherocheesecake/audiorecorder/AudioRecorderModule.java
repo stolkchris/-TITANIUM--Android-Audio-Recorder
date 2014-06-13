@@ -201,9 +201,7 @@ public class AudioRecorderModule extends KrollModule
 
             registerCallbacks(args);
 
-            System.out.println("Getting output filename");
             final String outputFile = getOutputFilename(filename, fileDirectory, fileLocation);
-            System.out.println("@@## outputFileName = "+ outputFile);
             if(outputFile == null || outputFile == ""){
                 sendErrorEvent("External storage not available");
                 return;
@@ -234,6 +232,7 @@ public class AudioRecorderModule extends KrollModule
                         } catch (FileNotFoundException e) {
                             e.printStackTrace();
                         }
+
                         while(isRecording) {
                             recorder.read(buffer, 0, buffer.length);
                             try {
@@ -243,6 +242,7 @@ public class AudioRecorderModule extends KrollModule
                                 sendErrorEvent(e.toString());
                             }
                             try {
+                            	os.flush();
                                 os.close();
                             } catch (IOException e) {
                                 e.printStackTrace();
