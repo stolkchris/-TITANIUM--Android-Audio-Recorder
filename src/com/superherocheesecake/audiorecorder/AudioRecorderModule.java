@@ -189,8 +189,9 @@ public class AudioRecorderModule extends KrollModule
 
             registerCallbacks(args);
 
+            System.out.println("Getting output filename");
             final String outputFile = getOutputFilename(filename, fileDirectory, fileLocation);
-            //System.out.println("@@## outputFileName = "+outputFileName);
+            System.out.println("@@## outputFileName = "+ outputFile);
             if(outputFile == null || outputFile == ""){
                 sendErrorEvent("External storage not available");
                 return;
@@ -200,7 +201,7 @@ public class AudioRecorderModule extends KrollModule
             int sampleRate              = 44100;
             int channelConfig           = AudioFormat.CHANNEL_IN_MONO;
             final int bufferSizeInBytes = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat);
-            final byte Data[]           = new byte[bufferSizeInBytes];
+            final byte buffer[]           = new byte[bufferSizeInBytes];
             
             recorder = new AudioRecord(
                 MediaRecorder.AudioSource.MIC, 
@@ -209,8 +210,15 @@ public class AudioRecorderModule extends KrollModule
                 audioFormat,
                 bufferSizeInBytes
             );
+            
+            if (recorder.getState() == AudioRecord.STATE_INITIALIZED) {
+            	sendErrorEvent("init");
+            } else {
+            	sendErrorEvent("Uninit");
+            }
+        }
 
-            try {
+            /*try {
                 Thread recordingThread = new Thread(new Runnable() {
                     public void run() {
                         // Create file output stream variable
@@ -222,9 +230,9 @@ public class AudioRecorderModule extends KrollModule
                             e.printStackTrace();
                         }
                         while(isRecording) {
-                            recorder.read(Data, 0, Data.length);
+                            recorder.read(buffer, 0, buffer.length);
                             try {
-                                os.write(Data, 0, bufferSizeInBytes);
+                                os.write(buffer, 0, bufferSizeInBytes);
                             } catch (IOException e) {
                                 e.printStackTrace();
                                 sendErrorEvent(e.toString());
@@ -242,13 +250,14 @@ public class AudioRecorderModule extends KrollModule
                 recordingThread.start();
                 recorder.startRecording();
             } catch (Exception e) {
-                isRecording = false;
-                recorder.stop();
+            	if (isRecording()) {
+            		recorder.stop();
+            	}
 
                 e.printStackTrace();
                 sendErrorEvent(e.toString());
             }
-        }
+        }*/
     }
 
     @Kroll.method
