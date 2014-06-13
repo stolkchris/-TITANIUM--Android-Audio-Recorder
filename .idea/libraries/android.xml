@@ -1,0 +1,10 @@
+<component name="libraryTable">
+  <library name="android">
+    <CLASSES>
+      <root url="file://$USER_HOME$/Library/Application Support/Titanium/mobilesdk/osx/3.2.2.GA/android" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+    <jarDirectory url="file://$USER_HOME$/Library/Application Support/Titanium/mobilesdk/osx/3.2.2.GA/android" recursive="false" />
+  </library>
+</component>

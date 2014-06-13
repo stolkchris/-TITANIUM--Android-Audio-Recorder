@@ -8,10 +8,7 @@
  */
 package com.superherocheesecake.audiorecorder;
 
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.IOException;
+import java.io.*;
 import java.util.Arrays;
 import java.util.HashMap;
 
@@ -34,7 +31,8 @@ public class AudioRecorderModule extends KrollModule
     @Kroll.constant public static final String Storage_INTERNAL = "internal";
     @Kroll.constant public static final String Storage_EXTERNAL = "external";
 
-    private Thread recordingThread = null;
+    private DataOutputStream fileStream = null;
+    private Thread recordingThread      = null;
     
     private String      outputFile  = null;
     private Boolean     isRecording = false;
@@ -152,7 +150,7 @@ public class AudioRecorderModule extends KrollModule
      */
     private String getOutputFilename(String filename, String dirname, String location) throws Exception {
         dirname  = (dirname != null && dirname.length() > 0) ? dirname : AUDIO_RECORDER_FOLDER;
-        filename = System.currentTimeMillis() + (String)filename + ".wav";
+        filename = (String)filename + ".pcm";
 
         if (!checkStorageType(location)) {
             throw new Exception("Invalid storage type supplied");
@@ -160,27 +158,23 @@ public class AudioRecorderModule extends KrollModule
 
         if(location.equals(Storage_INTERNAL)){
             File audioDirectory = TiApplication.getAppRootOrCurrentActivity().getDir(dirname, Context.MODE_WORLD_READABLE);
-            //System.out.println("@@## audioDirectory.exists(): " + audioDirectory.exists());
+
             if (!audioDirectory.exists()) {
                 audioDirectory.mkdirs();
             }
-            outputFile = (audioDirectory.getAbsolutePath() + "/" + filename);
-            //System.out.println("@@## internal fullFileName: " + fullFileName);
-            return outputFile;
+            return (audioDirectory.getAbsolutePath() + "/" + filename);
         } else {
             if(isExternalStorageWritable()){
                 String packageName = TiApplication.getAppRootOrCurrentActivity().getPackageName();
-                //System.out.println("@@## packageName: " + packageName);
+
                 String sdCardPath = Environment.getExternalStorageDirectory().getPath();
-                File audioDirectory = new File(sdCardPath, packageName+"/"+dirname);
+                File audioDirectory = new File(sdCardPath, packageName+ "/" +dirname);
 
                 if (!audioDirectory.exists()) {
                     audioDirectory.mkdirs();
                 }
 
-                outputFile = (audioDirectory.getAbsolutePath() + "/" + filename);
-                //System.out.println("@@## external fullFileName: " + fullFileName);
-                return outputFile;
+                return (audioDirectory.getAbsolutePath() + "/" + filename);
             } else {
                 return null;
             }
@@ -189,7 +183,7 @@ public class AudioRecorderModule extends KrollModule
 
     @Kroll.method
     public void startRecording(HashMap args) throws Exception {
-        if(isRecording){
+        if(isRecording()){
             sendErrorEvent("Another audio record is inprogress");
         } else {
             recorder          = null;
@@ -201,59 +195,20 @@ public class AudioRecorderModule extends KrollModule
 
             registerCallbacks(args);
 
-            final String outputFile = getOutputFilename(filename, fileDirectory, fileLocation);
+            outputFile = getOutputFilename(filename, fileDirectory, fileLocation);
             if(outputFile == null || outputFile == ""){
                 sendErrorEvent("External storage not available");
                 return;
             }
 
-            int audioFormat             = AudioFormat.ENCODING_PCM_16BIT;
-            int sampleRate              = 44100;
-            int channelConfig           = AudioFormat.CHANNEL_IN_MONO;
-            final int bufferSizeInBytes = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat);
-            final byte buffer[]           = new byte[bufferSizeInBytes];
-            
-            recorder = new AudioRecord(
-                MediaRecorder.AudioSource.MIC, 
-                sampleRate,
-                channelConfig,
-                audioFormat,
-                bufferSizeInBytes
-            );
-
             try {
                 recordingThread = new Thread(new Runnable() {
                     public void run() {
-                        // Create file output stream variable
-                        FileOutputStream os = null;
-
-                        try {
-                            os = new FileOutputStream(outputFile);
-                        } catch (FileNotFoundException e) {
-                            e.printStackTrace();
-                        }
-
-                        while(isRecording()) {
-                            recorder.read(buffer, 0, buffer.length);
-                            try {
-                                os.write(buffer, 0, bufferSizeInBytes);
-                            } catch (IOException e) {
-                                e.printStackTrace();
-                                sendErrorEvent(e.toString());
-                            }
-                            try {
-                            	os.flush();
-                                os.close();
-                            } catch (IOException e) {
-                                e.printStackTrace();
-                                sendErrorEvent(e.toString());
-                            }
-                        }
+                        recordAudio();
                     }
                 });
 
                 recordingThread.start();
-                recorder.startRecording();
             } catch (Exception e) {
                 e.printStackTrace();
                 sendErrorEvent(e.toString());
@@ -262,14 +217,17 @@ public class AudioRecorderModule extends KrollModule
     }
 
     @Kroll.method
-    public void stopRecording() {
-        //System.out.println("@@## called: stopRecording");
-        if (null != recorder) {
+    public void stopRecording() throws Exception {
+        if (recorder instanceof AudioRecord && recorder.getState() != AudioRecord.STATE_UNINITIALIZED) {
             try {
                 recorder.stop();
                 recorder.release();
 
-                recorder = null;
+                fileStream.flush();
+                fileStream.close();
+
+                recorder   = null;
+                fileStream = null;
                 sendSuccessEvent(outputFile);
             } catch (IllegalStateException e) {
                 try {
@@ -291,7 +249,7 @@ public class AudioRecorderModule extends KrollModule
      */
     @Kroll.method
     public Boolean isRecording() {
-        return (recorder instanceof AudioRecord && recorder.getState() == AudioRecord.RECORDSTATE_RECORDING);
+        return (recorder instanceof AudioRecord && recorder.getRecordingState() == AudioRecord.RECORDSTATE_RECORDING);
     }
 
     /**
@@ -322,7 +280,44 @@ public class AudioRecorderModule extends KrollModule
     	}
     	return false;
     }
-    
+
+    @Kroll.method
+    private void recordAudio() {
+        int audioFormat       = AudioFormat.ENCODING_PCM_16BIT;
+        int sampleRate        = 44100;
+        int channelConfig     = AudioFormat.CHANNEL_IN_MONO;
+        int bufferSizeInBytes = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat);
+        short[] buffer        = new short[bufferSizeInBytes];
+
+        try {
+            File audioFile = new File(outputFile);
+            fileStream     = new DataOutputStream(new BufferedOutputStream(new FileOutputStream(audioFile)));
+
+            if (!audioFile.exists()) {
+                audioFile.createNewFile();
+            }
+
+            recorder = new AudioRecord(
+                    MediaRecorder.AudioSource.MIC,
+                    sampleRate,
+                    channelConfig,
+                    audioFormat,
+                    bufferSizeInBytes
+            );
+
+            recorder.startRecording();
+            while (isRecording()) {
+                int bufferReadResult = recorder.read(buffer, 0, bufferSizeInBytes);
+                for (int i = 0; i < bufferReadResult; i++) {
+                    System.out.println("Writing to file");
+                    fileStream.writeShort(buffer[i]);
+                }
+            }
+        } catch(Exception e) {
+            e.printStackTrace();
+            sendErrorEvent(e.toString());
+        }
+    }
 
 }
 
