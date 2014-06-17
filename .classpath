@@ -13,5 +13,6 @@
 	<classpathentry kind="lib" path="/Users/SHCC/Library/Application Support/Titanium/mobilesdk/osx/3.2.2.GA/android/kroll-common.jar"/>
 	<classpathentry kind="lib" path="/Users/SHCC/Library/Application Support/Titanium/mobilesdk/osx/3.2.2.GA/android/titanium.jar"/>
 	<classpathentry kind="lib" path="/Users/SHCC/Library/android-sdk-macosx/add-ons/addon-google_apis-google-15/libs/maps.jar"/>
+	<classpathentry kind="lib" path="lib/jcaki-1.0-Alpha.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>

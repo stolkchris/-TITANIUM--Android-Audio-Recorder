@@ -293,7 +293,7 @@ public class AudioRecorderModule extends KrollModule
         int sampleRate        = 44100;
         int channelConfig     = AudioFormat.CHANNEL_IN_MONO;
         int bufferSizeInBytes = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat);
-        short[] buffer        = new short[bufferSizeInBytes];
+        byte[] buffer         = new byte[bufferSizeInBytes];
 
         try {
             File audioFile = new File(outputFile);
@@ -315,8 +315,7 @@ public class AudioRecorderModule extends KrollModule
             while (isRecording()) {
                 int bufferReadResult = recorder.read(buffer, 0, bufferSizeInBytes);
                 for (int i = 0; i < bufferReadResult; i++) {
-                    System.out.println("Writing to file");
-                    fileStream.writeShort(buffer[i]);
+                    fileStream.write(buffer[i]);
                 }
             }
         } catch(Exception e) {
