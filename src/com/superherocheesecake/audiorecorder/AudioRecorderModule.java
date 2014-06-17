@@ -9,7 +9,6 @@
 package com.superherocheesecake.audiorecorder;
 
 import java.io.*;
-import java.io.RandomAccessFile;
 import java.util.Arrays;
 import java.util.HashMap;
 
@@ -17,8 +16,8 @@ import org.appcelerator.kroll.KrollDict;
 import org.appcelerator.kroll.KrollFunction;
 import org.appcelerator.kroll.KrollModule;
 import org.appcelerator.kroll.annotations.Kroll;
+
 import org.appcelerator.titanium.TiApplication;
-import org.appcelerator.kroll.common.Log;
 
 import android.content.Context;
 import android.media.MediaRecorder;
