@@ -279,12 +279,6 @@ public class AudioRecorderModule extends KrollModule
         File file = new File(outputFile);
         if (file.exists()) {
             try {
-
-                if (fileStream instanceof DataOutputStream) {
-                    fileStream.flush();
-                    fileStream.close();
-                }
-
                 return file.delete();
             } catch(Exception e) {
                 e.printStackTrace();
@@ -346,10 +340,12 @@ public class AudioRecorderModule extends KrollModule
             }
 
             // Reset the recorder
-            recorder = null;
+            recorder        = null;
+            recordingThread = null;
+            fileStream      = null;
         }
 
-        this.deleteRecordedFile();
+        deleteRecordedFile();
         if (errorCallback != null) {
             HashMap<String, String> event = new HashMap<String, String>();
             event.put("message", message);
