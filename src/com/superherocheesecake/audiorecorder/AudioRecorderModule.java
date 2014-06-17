@@ -158,16 +158,17 @@ public class AudioRecorderModule extends KrollModule
                 fileStream.flush();
                 fileStream.close();
 
-                // Remove rcecorder and filestream objects
-                recorder   = null;
-                fileStream = null;
+                // Remove recorder and filestream objects
+                recorder        = null;
+                fileStream      = null;
+                recordingThread = null;
 
                 // Convert the raw PCM file into a readable WAVE file and send success back to the app
                 makeWaveFile();
                 sendSuccessEvent(outputFile);
             } catch (IllegalStateException e) {
                 try {
-                    
+                    deleteRecordedFile();
                 } catch (Exception subE) {
                     subE.printStackTrace();
                     sendErrorEvent(subE.toString());
@@ -278,6 +279,12 @@ public class AudioRecorderModule extends KrollModule
         File file = new File(outputFile);
         if (file.exists()) {
             try {
+
+                if (fileStream instanceof DataOutputStream) {
+                    fileStream.flush();
+                    fileStream.close();
+                }
+
                 return file.delete();
             } catch(Exception e) {
                 e.printStackTrace();
@@ -333,9 +340,8 @@ public class AudioRecorderModule extends KrollModule
      */
     private void sendErrorEvent(String message) {
         if (recorder instanceof AudioRecord) {
-            recorder.release();
-
             if (recorder.getState() != AudioRecord.STATE_UNINITIALIZED) {
+                recorder.release();
                 recorder.stop();
             }
 
