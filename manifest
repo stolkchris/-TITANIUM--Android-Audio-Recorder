@@ -2,11 +2,11 @@
 # this is your module manifest and used by Titanium
 # during compilation, packaging, distribution, etc.
 #
-version: 0.1.0
+version: 1.0.0
 apiversion: 2
-description: My module
+description: Android Audio Recorder
 author: Chris Stolk
-license: Specify your license
+license: N/A
 copyright: Superherocheesecake 2014
 
 
