@@ -26,6 +26,8 @@ import android.media.AudioRecord;
 import android.media.AudioFormat;
 import android.os.Environment;
 
+import com.superherocheesecake.wavehelper.*;
+
 @Kroll.module(name="AudioRecorder", id="com.superherocheesecake.audiorecorder")
 public class AudioRecorderModule extends KrollModule
 {
@@ -326,41 +328,15 @@ public class AudioRecorderModule extends KrollModule
     @Kroll.method
     private void makeWaveFile()
     {
-        File inputFile = new File(outputFile);
+        File inputFile     = new File(outputFile);
+        File wavOutputFile = new File(outputFile.replace(".pcm",".wav"));
 
         try {
-            RandomAccessFile waveFile  = new RandomAccessFile(outputFile.replace(".pcm",".wav"), "rw");
-            FileInputStream inputStream = new FileInputStream(inputFile);
-
-            waveFile.setLength(0);
-            waveFile.writeBytes("RIFF");
-            waveFile.writeInt(36 + inputStream.available());
-            waveFile.writeBytes("WAVE");
-            waveFile.writeBytes("fmt ");
-            waveFile.writeInt(Integer.reverseBytes(16));               // Sub-chunk size, 16 for PCM
-            waveFile.writeShort(Short.reverseBytes((short) 1));        // AudioFormat, 1 for PCM
-            waveFile.writeShort(Short.reverseBytes((short) 1));        // Number of channels, 1 for mono, 2 for stereo
-            waveFile.writeInt(Integer.reverseBytes(44100));            // Sample rate
-            waveFile.writeInt(Integer.reverseBytes(44100*1*16/8));     // Byte rate, SampleRate*NumberOfChannels*mBitsPersample/8
-            waveFile.writeShort(Short.reverseBytes((short) (1*16/8))); // Block align, NumberOfChannels*mBitsPersample/8
-            waveFile.writeShort(Short.reverseBytes((short) 16));       // Bits per sample
-            waveFile.writeBytes("data");
-            waveFile.writeInt(inputStream.available());                // Data chunk size not known yet, write 0
-
-            boolean readable = false;
-            int byteValue = 0;
-            while (readable = true) {
-                byteValue = inputStream.read();
-
-                if (byteValue == -1) {
-                    readable = false;
-                    break;
-                }
-
-                waveFile.writeByte(inputStream.read());
-            }
-
-            waveFile.close();
+            PcmAudioHelper.convertRawToWav(
+                WavAudioFormat.mono16Bit(44100),
+                inputFile,
+                wavOutputFile
+            );
             inputFile.delete();
         } catch(Exception e) {
             e.printStackTrace();
