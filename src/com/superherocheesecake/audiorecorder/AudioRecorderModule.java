@@ -9,6 +9,7 @@
 package com.superherocheesecake.audiorecorder;
 
 import java.io.*;
+import java.io.RandomAccessFile;
 import java.util.Arrays;
 import java.util.HashMap;
 
@@ -25,6 +26,8 @@ import android.media.AudioRecord;
 import android.media.AudioFormat;
 import android.os.Environment;
 
+import com.superherocheesecake.wavehelper.*;
+
 @Kroll.module(name="AudioRecorder", id="com.superherocheesecake.audiorecorder")
 public class AudioRecorderModule extends KrollModule
 {
@@ -35,7 +38,6 @@ public class AudioRecorderModule extends KrollModule
     private Thread recordingThread      = null;
     
     private String      outputFile  = null;
-    private Boolean     isRecording = false;
     private AudioRecord recorder    = null;
 
     private KrollFunction successCallback = null;
@@ -57,63 +59,35 @@ public class AudioRecorderModule extends KrollModule
     @Kroll.onAppCreate
     public static void onAppCreate(TiApplication app)
     {
-        Log.d(TAG, "inside onAppCreate");
+        // NOOP
     }
 
-
-    // Methods
-    @SuppressWarnings("deprecation")
-    private KrollFunction getCallback(final KrollDict options, final String name) {
-        return (KrollFunction) options.get(name);
-    }
-
-    /* Checks if external storage is available for read and write */
+    /**
+     * Checks if external storage is mounted for R/W operations
+     * @return
+     */
+    @Kroll.method
     public boolean isExternalStorageWritable() {
         String state = Environment.getExternalStorageState();
         if (Environment.MEDIA_MOUNTED.equals(state)) {
             return true;
         }
+
         return false;
     }
 
     /**
-     * Sends success event and calls the success callback
-     * @param filepath [description]
+     * Check if the recorder is recording
+     * @return Boolean
      */
-    private void sendSuccessEvent(String filepath) {
-        if (successCallback != null) {
-            HashMap<String, String> event = new HashMap<String, String>();
-            event.put("outputFile", outputFile);
-
-            // Fire an event directly to the specified listener (callback)
-            successCallback.call(getKrollObject(), event);
-        }
+    @Kroll.method
+    public Boolean isRecording() {
+        return (recorder instanceof AudioRecord && recorder.getRecordingState() == AudioRecord.RECORDSTATE_RECORDING);
     }
 
-    /**
-     * Sends an error event and calls the error callback
-     * @param message Error message
-     */
-    private void sendErrorEvent(String message) {
-    	if (recorder instanceof AudioRecord) {
-    		recorder.release();
-    		
-    		if (recorder.getState() != AudioRecord.STATE_UNINITIALIZED) {
-    			recorder.stop();
-    		}
-    		
-    		// Reset the recorder
-    		recorder = null;
-    	}
-    	
-    	this.deleteRecordedFile();
-        if (errorCallback != null) {
-            HashMap<String, String> event = new HashMap<String, String>();
-            event.put("message", message);
-
-            // Fire an event directly to the specified listener (callback)
-            errorCallback.call(getKrollObject(), event);
-        }
+    @SuppressWarnings("deprecation")
+    private KrollFunction getCallback(final KrollDict options, final String name) {
+        return (KrollFunction) options.get(name);
     }
 
     /**
@@ -136,6 +110,72 @@ public class AudioRecorderModule extends KrollModule
             callback = args.get("error");
             if (callback instanceof KrollFunction) {
                 errorCallback = (KrollFunction) callback;
+            }
+        }
+    }
+
+    @Kroll.method
+    public void startRecording(HashMap args) throws Exception {
+        if(isRecording()){
+            sendErrorEvent("Another audio record is inprogress");
+        } else {
+            KrollDict options = new KrollDict(args);
+            
+            String filename      = (String) options.get("filename");
+            String fileDirectory = (String) options.get("directoryName");
+            String fileLocation  = (options.containsKey("fileLocation")) ? (String) options.get("fileLocation") : Storage_EXTERNAL;
+
+            outputFile = getOutputFilename(filename, fileDirectory, fileLocation);
+            if(outputFile == null || outputFile == ""){
+                sendErrorEvent("External storage not available");
+                return;
+            }
+
+            registerCallbacks(args);
+
+            try {
+                recordingThread = new Thread(new Runnable() {
+                    public void run() {
+                        recordAudio();
+                    }
+                });
+
+                recordingThread.start();
+            } catch (Exception e) {
+                e.printStackTrace();
+                sendErrorEvent(e.toString());
+            }
+        }
+    }
+
+    @Kroll.method
+    public void stopRecording() throws Exception {
+        if (recorder instanceof AudioRecord && recorder.getState() != AudioRecord.STATE_UNINITIALIZED) {
+            try {
+                recorder.stop();
+                recorder.release();
+
+                // Flush all remaining data into the file and close
+                fileStream.flush();
+                fileStream.close();
+
+                // Remove rcecorder and filestream objects
+                recorder   = null;
+                fileStream = null;
+
+                // Convert the raw PCM file into a readable WAVE file and send success back to the app
+                makeWaveFile();
+                sendSuccessEvent(outputFile);
+            } catch (IllegalStateException e) {
+                try {
+                    
+                } catch (Exception subE) {
+                    subE.printStackTrace();
+                    sendErrorEvent(subE.toString());
+                }
+
+                e.printStackTrace();
+                sendErrorEvent(e.toString());
             }
         }
     }
@@ -181,113 +221,26 @@ public class AudioRecorderModule extends KrollModule
         }
     }
 
-    @Kroll.method
-    public void startRecording(HashMap args) throws Exception {
-        if(isRecording()){
-            sendErrorEvent("Another audio record is inprogress");
-        } else {
-            recorder          = null;
-            KrollDict options = new KrollDict(args);
-            
-            String filename      = (String) options.get("filename");
-            String fileDirectory = (String) options.get("directoryName");
-            String fileLocation  = (options.containsKey("fileLocation")) ? (String) options.get("fileLocation") : Storage_EXTERNAL;
-
-            registerCallbacks(args);
-
-            outputFile = getOutputFilename(filename, fileDirectory, fileLocation);
-            if(outputFile == null || outputFile == ""){
-                sendErrorEvent("External storage not available");
-                return;
-            }
-
-            try {
-                recordingThread = new Thread(new Runnable() {
-                    public void run() {
-                        recordAudio();
-                    }
-                });
-
-                recordingThread.start();
-            } catch (Exception e) {
-                e.printStackTrace();
-                sendErrorEvent(e.toString());
-            }
-        }
-    }
-
-    @Kroll.method
-    public void stopRecording() throws Exception {
-        if (recorder instanceof AudioRecord && recorder.getState() != AudioRecord.STATE_UNINITIALIZED) {
-            try {
-                recorder.stop();
-                recorder.release();
-
-                fileStream.flush();
-                fileStream.close();
-
-                recorder   = null;
-                fileStream = null;
-                sendSuccessEvent(outputFile);
-            } catch (IllegalStateException e) {
-                try {
-                    
-                } catch (Exception subE) {
-                    subE.printStackTrace();
-                    sendErrorEvent(subE.toString());
-                }
-
-                e.printStackTrace();
-                sendErrorEvent(e.toString());
-            }
-        }
-    }
-
-    /**
-     * Check if the recorder is recording
-     * @return Boolean
-     */
-    @Kroll.method
-    public Boolean isRecording() {
-        return (recorder instanceof AudioRecord && recorder.getRecordingState() == AudioRecord.RECORDSTATE_RECORDING);
-    }
-
     /**
      * Checks if storage type is supported
      * @param type The supplied type
      * @return Boolean
      */
-    @Kroll.method
     private Boolean checkStorageType(String type)
     {
         String[] types = {Storage_INTERNAL, Storage_EXTERNAL};
         return Arrays.asList(types).contains(type);
     }
-    
-    /**
-     * Attempts to delete the recorded file
-     * @return
-     */
-    @Kroll.method
-    private Boolean deleteRecordedFile() {
-    	File file = new File(outputFile);
-    	if (file.exists()) {
-    		try {
-    			return file.delete();
-    		} catch(Exception e) {
-    			e.printStackTrace();
-    		}
-    	}
-    	return false;
-    }
 
-    @Kroll.method
+    /**
+     * Starts the recording
+     */
     private void recordAudio() {
         int audioFormat       = AudioFormat.ENCODING_PCM_16BIT;
         int sampleRate        = 44100;
         int channelConfig     = AudioFormat.CHANNEL_IN_MONO;
         int bufferSizeInBytes = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat);
-        short[] buffer        = new short[bufferSizeInBytes];
+        byte[] buffer         = new byte[bufferSizeInBytes];
 
         try {
             File audioFile = new File(outputFile);
@@ -309,13 +262,95 @@ public class AudioRecorderModule extends KrollModule
             while (isRecording()) {
                 int bufferReadResult = recorder.read(buffer, 0, bufferSizeInBytes);
                 for (int i = 0; i < bufferReadResult; i++) {
-                    System.out.println("Writing to file");
-                    fileStream.writeShort(buffer[i]);
+                    fileStream.write(buffer[i]);
                 }
             }
         } catch(Exception e) {
             e.printStackTrace();
             sendErrorEvent(e.toString());
+        }
+    }
+
+    /**
+     * Attempts to delete the recorded file
+     * @return
+     */
+    private Boolean deleteRecordedFile() {
+        File file = new File(outputFile);
+        if (file.exists()) {
+            try {
+                return file.delete();
+            } catch(Exception e) {
+                e.printStackTrace();
+                // Do nothing, it'll just return false
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Converts a raw PCM file to wav
+     */
+    private void makeWaveFile()
+    {
+        File inputFile     = new File(outputFile);
+        File wavOutputFile = new File(outputFile.replace(".pcm",".wav"));
+
+        try {
+            PcmAudioHelper.convertRawToWav(
+                WavAudioFormat.mono16Bit(44100),
+                inputFile,
+                wavOutputFile
+            );
+
+            inputFile.delete();
+        } catch(Exception e) {
+            e.printStackTrace();
+            sendErrorEvent(e.toString());
+        }
+    }
+
+    //////////////////////////////////////
+    //      EVENT HANDLERS              //
+    //////////////////////////////////////
+
+    /**
+     * Sends success event and calls the success callback
+     * @param filepath [description]
+     */
+    private void sendSuccessEvent(String filepath) {
+        if (successCallback != null) {
+            HashMap<String, String> event = new HashMap<String, String>();
+            event.put("outputFile", outputFile);
+
+            // Fire an event directly to the specified listener (callback)
+            successCallback.call(getKrollObject(), event);
+        }
+    }
+
+    /**
+     * Sends an error event and calls the error callback
+     * @param message Error message
+     */
+    private void sendErrorEvent(String message) {
+        if (recorder instanceof AudioRecord) {
+            recorder.release();
+
+            if (recorder.getState() != AudioRecord.STATE_UNINITIALIZED) {
+                recorder.stop();
+            }
+
+            // Reset the recorder
+            recorder = null;
+        }
+
+        this.deleteRecordedFile();
+        if (errorCallback != null) {
+            HashMap<String, String> event = new HashMap<String, String>();
+            event.put("message", message);
+
+            // Fire an event directly to the specified listener (callback)
+            errorCallback.call(getKrollObject(), event);
         }
     }
 
